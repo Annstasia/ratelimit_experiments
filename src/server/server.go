@@ -3,8 +3,8 @@ package server
 import (
 	"net/http"
 
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	"github.com/envoyproxy/ratelimit/src/provider"
 
 	stats "github.com/lyft/gostats"

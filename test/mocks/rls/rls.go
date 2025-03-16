@@ -8,7 +8,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	envoy_service_ratelimit_v3 "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//envoy_service_ratelimit_v3 "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	envoy_service_ratelimit_v3 "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -16,6 +17,13 @@ import (
 type MockRateLimitServiceServer struct {
 	ctrl     *gomock.Controller
 	recorder *MockRateLimitServiceServerMockRecorder
+}
+
+func (m *MockRateLimitServiceServer) ChangeLimit(
+	ctx context.Context, request *envoy_service_ratelimit_v3.RateLimitRequest,
+) (*envoy_service_ratelimit_v3.ChangeLimitResponse, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 // MockRateLimitServiceServerMockRecorder is the mock recorder for MockRateLimitServiceServer

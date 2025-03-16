@@ -5,7 +5,8 @@ import (
 	"math/rand"
 
 	"github.com/coocood/freecache"
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	logger "github.com/sirupsen/logrus"
 
 	"github.com/envoyproxy/ratelimit/src/assert"
@@ -32,18 +33,21 @@ type LimitInfo struct {
 	overLimitThreshold  uint64
 }
 
-func NewRateLimitInfo(limit *config.RateLimit, limitBeforeIncrease uint64, limitAfterIncrease uint64,
+func NewRateLimitInfo(
+	limit *config.RateLimit, limitBeforeIncrease uint64, limitAfterIncrease uint64,
 	nearLimitThreshold uint64, overLimitThreshold uint64,
 ) *LimitInfo {
 	return &LimitInfo{
-		limit: limit, limitBeforeIncrease: limitBeforeIncrease, limitAfterIncrease: limitAfterIncrease,
+		limit: limit, limitBeforeIncrease: limitBeforeIncrease,
+		limitAfterIncrease: limitAfterIncrease,
 		nearLimitThreshold: nearLimitThreshold, overLimitThreshold: overLimitThreshold,
 	}
 }
 
 // Generates cache keys for given rate limit request. Each cache key is represented by a concatenation of
 // domain, descriptor and current timestamp.
-func (this *BaseRateLimiter) GenerateCacheKeys(request *pb.RateLimitRequest,
+func (this *BaseRateLimiter) GenerateCacheKeys(
+	request *pb.RateLimitRequest,
 	limits []*config.RateLimit, hitsAddends []uint64,
 ) []CacheKey {
 	assert.Assert(len(request.Descriptors) == len(limits))
@@ -52,7 +56,9 @@ func (this *BaseRateLimiter) GenerateCacheKeys(request *pb.RateLimitRequest,
 	for i := 0; i < len(request.Descriptors); i++ {
 		// generateCacheKey() returns an empty string in the key if there is no limit
 		// so that we can keep the arrays all the same size.
-		cacheKeys[i] = this.cacheKeyGenerator.GenerateCacheKey(request.Domain, request.Descriptors[i], limits[i], now)
+		cacheKeys[i] = this.cacheKeyGenerator.GenerateCacheKey(
+			request.Domain, request.Descriptors[i], limits[i], now,
+		)
 		// Increase statistics for limits hit by their respective requests.
 		if limits[i] != nil {
 			limits[i].Stats.TotalHits.Add(hitsAddends[i])
@@ -80,12 +86,15 @@ func (this *BaseRateLimiter) IsOverLimitThresholdReached(limitInfo *LimitInfo) b
 
 // Generates response descriptor status based on cache key, over the limit with local cache, over the limit and
 // near the limit thresholds. Thresholds are checked in order and are mutually exclusive.
-func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *LimitInfo,
+func (this *BaseRateLimiter) GetResponseDescriptorStatus(
+	key string, limitInfo *LimitInfo,
 	isOverLimitWithLocalCache bool, hitsAddend uint64,
 ) *pb.RateLimitResponse_DescriptorStatus {
 	if key == "" {
-		return this.generateResponseDescriptorStatus(pb.RateLimitResponse_OK,
-			nil, 0)
+		return this.generateResponseDescriptorStatus(
+			pb.RateLimitResponse_OK,
+			nil, 0,
+		)
 	}
 	var responseDescriptorStatus *pb.RateLimitResponse_DescriptorStatus
 	isOverLimit := false
@@ -93,8 +102,10 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 		isOverLimit = true
 		limitInfo.limit.Stats.OverLimit.Add(hitsAddend)
 		limitInfo.limit.Stats.OverLimitWithLocalCache.Add(hitsAddend)
-		responseDescriptorStatus = this.generateResponseDescriptorStatus(pb.RateLimitResponse_OVER_LIMIT,
-			limitInfo.limit.Limit, 0)
+		responseDescriptorStatus = this.generateResponseDescriptorStatus(
+			pb.RateLimitResponse_OVER_LIMIT,
+			limitInfo.limit.Limit, 0,
+		)
 	} else {
 		limitInfo.overLimitThreshold = uint64(limitInfo.limit.Limit.RequestsPerUnit)
 		// The nearLimitThreshold is the number of requests that can be made before hitting the nearLimitRatio.
@@ -103,8 +114,10 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 		logger.Debugf("cache key: %s current: %d", key, limitInfo.limitAfterIncrease)
 		if limitInfo.limitAfterIncrease > limitInfo.overLimitThreshold {
 			isOverLimit = true
-			responseDescriptorStatus = this.generateResponseDescriptorStatus(pb.RateLimitResponse_OVER_LIMIT,
-				limitInfo.limit.Limit, 0)
+			responseDescriptorStatus = this.generateResponseDescriptorStatus(
+				pb.RateLimitResponse_OVER_LIMIT,
+				limitInfo.limit.Limit, 0,
+			)
 
 			this.checkOverLimitThreshold(limitInfo, hitsAddend)
 
@@ -116,14 +129,19 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 				// similar to mongo_1h, mongo_2h, etc. In the hour 1 (0h0m - 0h59m), the cache key is mongo_1h, we start
 				// to get ratelimited in the 50th minute, the ttl of local_cache will be set as 1 hour(0h50m-1h49m).
 				// In the time of 1h1m, since the cache key becomes different (mongo_2h), it won't get ratelimited.
-				err := this.localCache.Set([]byte(key), []byte{}, int(utils.UnitToDivider(limitInfo.limit.Limit.Unit)))
+				err := this.localCache.Set(
+					[]byte(key), []byte{}, int(utils.UnitToDivider(limitInfo.limit.Limit.Unit)),
+				)
 				if err != nil {
 					logger.Errorf("Failing to set local cache key: %s", key)
 				}
 			}
 		} else {
-			responseDescriptorStatus = this.generateResponseDescriptorStatus(pb.RateLimitResponse_OK,
-				limitInfo.limit.Limit, uint32(limitInfo.overLimitThreshold-limitInfo.limitAfterIncrease))
+			responseDescriptorStatus = this.generateResponseDescriptorStatus(
+				pb.RateLimitResponse_OK,
+				limitInfo.limit.Limit,
+				uint32(limitInfo.overLimitThreshold-limitInfo.limitAfterIncrease),
+			)
 
 			// The limit is OK but we additionally want to know if we are near the limit.
 			this.checkNearLimitThreshold(limitInfo, hitsAddend)
@@ -142,8 +160,10 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 	return responseDescriptorStatus
 }
 
-func NewBaseRateLimit(timeSource utils.TimeSource, jitterRand *rand.Rand, expirationJitterMaxSeconds int64,
-	localCache *freecache.Cache, nearLimitRatio float32, cacheKeyPrefix string, statsManager stats.Manager,
+func NewBaseRateLimit(
+	timeSource utils.TimeSource, jitterRand *rand.Rand, expirationJitterMaxSeconds int64,
+	localCache *freecache.Cache, nearLimitRatio float32, cacheKeyPrefix string,
+	statsManager stats.Manager,
 ) *BaseRateLimiter {
 	return &BaseRateLimiter{
 		timeSource:                 timeSource,
@@ -169,7 +189,11 @@ func (this *BaseRateLimiter) checkOverLimitThreshold(limitInfo *LimitInfo, hitsA
 
 		// If the limit before increase was below the over limit value, then some of the hits were
 		// in the near limit range.
-		limitInfo.limit.Stats.NearLimit.Add(limitInfo.overLimitThreshold - max(limitInfo.nearLimitThreshold, limitInfo.limitBeforeIncrease))
+		limitInfo.limit.Stats.NearLimit.Add(
+			limitInfo.overLimitThreshold - max(
+				limitInfo.nearLimitThreshold, limitInfo.limitBeforeIncrease,
+			),
+		)
 	}
 }
 
@@ -187,7 +211,9 @@ func (this *BaseRateLimiter) checkNearLimitThreshold(limitInfo *LimitInfo, hitsA
 	}
 }
 
-func (this *BaseRateLimiter) increaseShadowModeStats(isOverLimitWithLocalCache bool, limitInfo *LimitInfo, hitsAddend uint64) {
+func (this *BaseRateLimiter) increaseShadowModeStats(
+	isOverLimitWithLocalCache bool, limitInfo *LimitInfo, hitsAddend uint64,
+) {
 	// Increase shadow mode statistics. For the same reason as over limit stats,
 	// if the limit value before adding the N hits over the limit, then all N hits were over limit.
 	if isOverLimitWithLocalCache || limitInfo.limitBeforeIncrease >= limitInfo.overLimitThreshold {
@@ -197,7 +223,8 @@ func (this *BaseRateLimiter) increaseShadowModeStats(isOverLimitWithLocalCache b
 	}
 }
 
-func (this *BaseRateLimiter) generateResponseDescriptorStatus(responseCode pb.RateLimitResponse_Code,
+func (this *BaseRateLimiter) generateResponseDescriptorStatus(
+	responseCode pb.RateLimitResponse_Code,
 	limit *pb.RateLimitResponse_RateLimit, limitRemaining uint32,
 ) *pb.RateLimitResponse_DescriptorStatus {
 	if limit != nil {

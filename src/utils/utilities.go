@@ -4,7 +4,8 @@ import (
 	"regexp"
 	"strings"
 
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -38,7 +39,9 @@ func UnitToDivider(unit pb.RateLimitResponse_RateLimit_Unit) int64 {
 	panic("should not get here")
 }
 
-func CalculateReset(unit *pb.RateLimitResponse_RateLimit_Unit, timeSource TimeSource) *durationpb.Duration {
+func CalculateReset(
+	unit *pb.RateLimitResponse_RateLimit_Unit, timeSource TimeSource,
+) *durationpb.Duration {
 	sec := UnitToDivider(*unit)
 	now := timeSource.UnixNow()
 	return &durationpb.Duration{Seconds: sec - now%sec}
@@ -67,9 +70,11 @@ var ipv4Regex = regexp.MustCompile(`\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}`)
 // Remove invalid characters from the stat name.
 func SanitizeStatName(s string) string {
 	r := strings.NewReplacer(":", "_", "|", "_")
-	return ipv4Regex.ReplaceAllStringFunc(r.Replace(s), func(ip string) string {
-		return strings.ReplaceAll(ip, ".", "_")
-	})
+	return ipv4Regex.ReplaceAllStringFunc(
+		r.Replace(s), func(ip string) string {
+			return strings.ReplaceAll(ip, ".", "_")
+		},
+	)
 }
 
 func GetHitsAddends(request *pb.RateLimitRequest) []uint64 {

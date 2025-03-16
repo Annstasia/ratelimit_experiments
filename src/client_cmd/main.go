@@ -9,7 +9,8 @@ import (
 	"strings"
 
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -63,22 +64,33 @@ func (this *descriptorsValue) String() string {
 
 func main() {
 	dialString := flag.String(
-		"dial_string", "localhost:8081", "url of ratelimit server in <host>:<port> form")
+		"dial_string", "localhost:8081", "url of ratelimit server in <host>:<port> form",
+	)
 	domain := flag.String("domain", "", "rate limit configuration domain to query")
 	descriptorsValue := descriptorsValue{[]*pb_struct.RateLimitDescriptor{}}
 	flag.Var(
 		&descriptorsValue, "descriptors",
-		"descriptor list to query in <key>=<value>,<key>=<value>,... form")
-	oltpProtocol := flag.String("oltp-protocol", "", "protocol to use when exporting tracing span, accept http, grpc or empty (disable tracing) as value, please use OLTP environment variables to set endpoint (refer to README.MD)")
-	grpcServerTlsCACert := flag.String("grpc-server-ca-file", "", "path to the server CA file for TLS connection")
+		"descriptor list to query in <key>=<value>,<key>=<value>,... form",
+	)
+	oltpProtocol := flag.String(
+		"oltp-protocol", "",
+		"protocol to use when exporting tracing span, accept http, grpc or empty (disable tracing) as value, please use OLTP environment variables to set endpoint (refer to README.MD)",
+	)
+	grpcServerTlsCACert := flag.String(
+		"grpc-server-ca-file", "", "path to the server CA file for TLS connection",
+	)
 	grpcUseTLS := flag.Bool("grpc-use-tls", false, "Use TLS for connection to server")
-	grpcTlsCertFile := flag.String("grpc-cert-file", "", "path to the client cert file for TLS connection")
+	grpcTlsCertFile := flag.String(
+		"grpc-cert-file", "", "path to the client cert file for TLS connection",
+	)
 	grpcTlsKeyFile := flag.String("grpc-key-file", "", "path to the client key for TLS connection")
 	flag.Parse()
 
-	flag.VisitAll(func(f *flag.Flag) {
-		fmt.Printf("Flag: --%s=%q\n", f.Name, f.Value)
-	})
+	flag.VisitAll(
+		func(f *flag.Flag) {
+			fmt.Printf("Flag: --%s=%q\n", f.Name, f.Value)
+		},
+	)
 
 	if *oltpProtocol != "" {
 		tp := InitTracerProvider(*oltpProtocol)
@@ -93,8 +105,12 @@ func main() {
 		grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()),
 	}
 	if *grpcUseTLS {
-		tlsConfig := utils.TlsConfigFromFiles(*grpcTlsCertFile, *grpcTlsKeyFile, *grpcServerTlsCACert, utils.ServerCA, false)
-		dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		tlsConfig := utils.TlsConfigFromFiles(
+			*grpcTlsCertFile, *grpcTlsKeyFile, *grpcServerTlsCACert, utils.ServerCA, false,
+		)
+		dialOptions = append(
+			dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		)
 	} else {
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
@@ -115,7 +131,8 @@ func main() {
 			Domain:      *domain,
 			Descriptors: desc,
 			HitsAddend:  1,
-		})
+		},
+	)
 	if err != nil {
 		fmt.Printf("request error: %s\n", err.Error())
 		os.Exit(1)
@@ -154,6 +171,10 @@ func InitTracerProvider(protocol string) *sdktrace.TracerProvider {
 		sdktrace.WithResource(resource),
 	)
 	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	otel.SetTextMapPropagator(
+		propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{}, propagation.Baggage{},
+		),
+	)
 	return tp
 }

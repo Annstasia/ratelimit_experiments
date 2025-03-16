@@ -37,7 +37,8 @@ import (
 
 	logger "github.com/sirupsen/logrus"
 
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 
 	"github.com/envoyproxy/ratelimit/src/config"
 	"github.com/envoyproxy/ratelimit/src/limiter"
@@ -97,7 +98,8 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 	}
 
 	// Generate trace
-	_, span := tracer.Start(ctx, "Memcached Fetch Execution",
+	_, span := tracer.Start(
+		ctx, "Memcached Fetch Execution",
 		trace.WithAttributes(
 			attribute.Int("keysToGet length", len(keysToGet)),
 		),
@@ -105,8 +107,10 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 	defer span.End()
 
 	// Now fetch from memcache.
-	responseDescriptorStatuses := make([]*pb.RateLimitResponse_DescriptorStatus,
-		len(request.Descriptors))
+	responseDescriptorStatuses := make(
+		[]*pb.RateLimitResponse_DescriptorStatus,
+		len(request.Descriptors),
+	)
 
 	var memcacheValues map[string]*memcache.Item
 	var err error
@@ -134,14 +138,24 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 
 		limitAfterIncrease := limitBeforeIncrease + hitsAddends[i]
 
-		limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
+		limitInfo := limiter.NewRateLimitInfo(
+			limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0,
+		)
 
-		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(cacheKey.Key,
-			limitInfo, isOverLimitWithLocalCache[i], hitsAddends[i])
+		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(
+			cacheKey.Key,
+			limitInfo, isOverLimitWithLocalCache[i], hitsAddends[i],
+		)
 	}
 
 	this.waitGroup.Add(1)
-	runAsync(func() { this.increaseAsync(cacheKeys, isOverLimitWithLocalCache, limits, hitsAddends) })
+	runAsync(
+		func() {
+			this.increaseAsync(
+				cacheKeys, isOverLimitWithLocalCache, limits, hitsAddends,
+			)
+		},
+	)
 	if AutoFlushForIntegrationTests {
 		this.Flush()
 	}
@@ -149,7 +163,8 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 	return responseDescriptorStatuses
 }
 
-func (this *rateLimitMemcacheImpl) increaseAsync(cacheKeys []limiter.CacheKey, isOverLimitWithLocalCache []bool,
+func (this *rateLimitMemcacheImpl) increaseAsync(
+	cacheKeys []limiter.CacheKey, isOverLimitWithLocalCache []bool,
 	limits []*config.RateLimit, hitsAddends []uint64,
 ) {
 	defer this.waitGroup.Done()
@@ -166,17 +181,21 @@ func (this *rateLimitMemcacheImpl) increaseAsync(cacheKeys []limiter.CacheKey, i
 			}
 
 			// Need to add instead of increment.
-			err = this.client.Add(&memcache.Item{
-				Key:        cacheKey.Key,
-				Value:      []byte(strconv.FormatUint(hitsAddends[i], 10)),
-				Expiration: int32(expirationSeconds),
-			})
+			err = this.client.Add(
+				&memcache.Item{
+					Key:        cacheKey.Key,
+					Value:      []byte(strconv.FormatUint(hitsAddends[i], 10)),
+					Expiration: int32(expirationSeconds),
+				},
+			)
 			if err == memcache.ErrNotStored {
 				// There was a race condition to do this add. We should be able to increment
 				// now instead.
 				_, err := this.client.Increment(cacheKey.Key, hitsAddends[i])
 				if err != nil {
-					logger.Errorf("Failed to increment key %s after failing to add: %s", cacheKey.Key, err)
+					logger.Errorf(
+						"Failed to increment key %s after failing to add: %s", cacheKey.Key, err,
+					)
 					continue
 				}
 			} else if err != nil {
@@ -194,7 +213,10 @@ func (this *rateLimitMemcacheImpl) Flush() {
 	this.waitGroup.Wait()
 }
 
-func refreshServersPeriodically(serverList *memcache.ServerList, srv string, d time.Duration, resolver srv.SrvResolver, finish <-chan struct{}) {
+func refreshServersPeriodically(
+	serverList *memcache.ServerList, srv string, d time.Duration, resolver srv.SrvResolver,
+	finish <-chan struct{},
+) {
 	t := time.NewTicker(d)
 	defer t.Stop()
 	for {
@@ -301,8 +323,10 @@ func runAsync(task func()) {
 	}
 }
 
-func NewRateLimitCacheImpl(client Client, timeSource utils.TimeSource, jitterRand *rand.Rand,
-	expirationJitterMaxSeconds int64, localCache *freecache.Cache, statsManager stats.Manager, nearLimitRatio float32, cacheKeyPrefix string,
+func NewRateLimitCacheImpl(
+	client Client, timeSource utils.TimeSource, jitterRand *rand.Rand,
+	expirationJitterMaxSeconds int64, localCache *freecache.Cache, statsManager stats.Manager,
+	nearLimitRatio float32, cacheKeyPrefix string,
 ) limiter.RateLimitCache {
 	return &rateLimitMemcacheImpl{
 		client:                     client,
@@ -311,11 +335,15 @@ func NewRateLimitCacheImpl(client Client, timeSource utils.TimeSource, jitterRan
 		expirationJitterMaxSeconds: expirationJitterMaxSeconds,
 		localCache:                 localCache,
 		nearLimitRatio:             nearLimitRatio,
-		baseRateLimiter:            limiter.NewBaseRateLimit(timeSource, jitterRand, expirationJitterMaxSeconds, localCache, nearLimitRatio, cacheKeyPrefix, statsManager),
+		baseRateLimiter: limiter.NewBaseRateLimit(
+			timeSource, jitterRand, expirationJitterMaxSeconds, localCache, nearLimitRatio,
+			cacheKeyPrefix, statsManager,
+		),
 	}
 }
 
-func NewRateLimitCacheImplFromSettings(s settings.Settings, timeSource utils.TimeSource, jitterRand *rand.Rand,
+func NewRateLimitCacheImplFromSettings(
+	s settings.Settings, timeSource utils.TimeSource, jitterRand *rand.Rand,
 	localCache *freecache.Cache, scope gostats.Scope, statsManager stats.Manager,
 ) limiter.RateLimitCache {
 	return NewRateLimitCacheImpl(

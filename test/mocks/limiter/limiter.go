@@ -8,7 +8,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	envoy_service_ratelimit_v3 "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//envoy_service_ratelimit_v3 "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	envoy_service_ratelimit_v3 "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	gomock "github.com/golang/mock/gomock"
 
 	config "github.com/envoyproxy/ratelimit/src/config"

@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"fmt"
+	"google.golang.org/protobuf/runtime/protoimpl"
 	"math"
 	"strconv"
 	"strings"
@@ -17,7 +18,8 @@ import (
 	"github.com/envoyproxy/ratelimit/src/utils"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	logger "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 
@@ -36,7 +38,13 @@ type RateLimitServiceServer interface {
 	GetCurrentConfig() (config.RateLimitConfig, bool)
 	SetConfig(updateEvent provider.ConfigUpdateEvent, healthyWithAtLeastOneConfigLoad bool)
 }
+type LimitsConfig struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
 
+	Config string `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
+}
 type service struct {
 	configLock                  sync.RWMutex
 	configUpdateEvent           <-chan provider.ConfigUpdateEvent
@@ -52,7 +60,9 @@ type service struct {
 	globalShadowMode            bool
 }
 
-func (this *service) SetConfig(updateEvent provider.ConfigUpdateEvent, healthyWithAtLeastOneConfigLoad bool) {
+func (this *service) SetConfig(
+	updateEvent provider.ConfigUpdateEvent, healthyWithAtLeastOneConfigLoad bool,
+) {
 	newConfig, err := updateEvent.GetConfig()
 	if err != nil {
 		configError, ok := err.(config.RateLimitConfigError)
@@ -110,7 +120,9 @@ func checkServiceErr(something bool, msg string) {
 	}
 }
 
-func (this *service) constructLimitsToCheck(request *pb.RateLimitRequest, ctx context.Context, snappedConfig config.RateLimitConfig) ([]*config.RateLimit, []bool) {
+func (this *service) constructLimitsToCheck(
+	request *pb.RateLimitRequest, ctx context.Context, snappedConfig config.RateLimitConfig,
+) ([]*config.RateLimit, []bool) {
 	checkServiceErr(snappedConfig != nil, "no rate limit configuration loaded")
 
 	limitsToCheck := make([]*config.RateLimit, len(request.Descriptors))
@@ -264,8 +276,12 @@ func (this *service) rateLimitResetHeader(
 	descriptor *pb.RateLimitResponse_DescriptorStatus,
 ) *core.HeaderValue {
 	return &core.HeaderValue{
-		Key:   this.customHeaderResetHeader,
-		Value: strconv.FormatInt(utils.CalculateReset(&descriptor.CurrentLimit.Unit, this.customHeaderClock).GetSeconds(), 10),
+		Key: this.customHeaderResetHeader,
+		Value: strconv.FormatInt(
+			utils.CalculateReset(
+				&descriptor.CurrentLimit.Unit, this.customHeaderClock,
+			).GetSeconds(), 10,
+		),
 	}
 }
 
@@ -274,7 +290,8 @@ func (this *service) ShouldRateLimit(
 	request *pb.RateLimitRequest,
 ) (finalResponse *pb.RateLimitResponse, finalError error) {
 	// Generate trace
-	_, span := tracer.Start(ctx, "ShouldRateLimit Execution",
+	_, span := tracer.Start(
+		ctx, "ShouldRateLimit Execution",
 		trace.WithAttributes(
 			attribute.String("domain", request.Domain),
 			attribute.String("request string", request.String()),
@@ -313,14 +330,44 @@ func (this *service) ShouldRateLimit(
 	return response, nil
 }
 
+func (this *service) ChangeLimit(
+	ctx context.Context,
+	request *pb.RateLimitRequest,
+) (finalResponse *pb.ChangeLimitResponse, finalError error) {
+	// Generate trace
+	fmt.Println("change limit is called")
+
+	return nil, nil
+}
+
+type AnalyzerResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Response string `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
+}
+
+func (this *service) UpdateLimits(
+	ctx context.Context,
+	config *LimitsConfig,
+) (finalResponse *AnalyzerResponse, finalError error) {
+
+	fmt.Println("was called")
+	return nil, finalError
+}
+
 func (this *service) GetCurrentConfig() (config.RateLimitConfig, bool) {
 	this.configLock.RLock()
 	defer this.configLock.RUnlock()
 	return this.config, this.globalShadowMode
 }
 
-func NewService(cache limiter.RateLimitCache, configProvider provider.RateLimitConfigProvider, statsManager stats.Manager,
-	health *server.HealthChecker, clock utils.TimeSource, shadowMode, forceStart bool, healthyWithAtLeastOneConfigLoad bool,
+func NewService(
+	cache limiter.RateLimitCache, configProvider provider.RateLimitConfigProvider,
+	statsManager stats.Manager,
+	health *server.HealthChecker, clock utils.TimeSource, shadowMode, forceStart bool,
+	healthyWithAtLeastOneConfigLoad bool,
 ) RateLimitServiceServer {
 	newService := &service{
 		configLock:        sync.RWMutex{},

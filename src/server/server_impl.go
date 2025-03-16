@@ -23,7 +23,8 @@ import (
 	"github.com/envoyproxy/ratelimit/src/stats"
 
 	"github.com/coocood/freecache"
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	"github.com/gorilla/mux"
 	"github.com/libp2p/go-reuseport"
 	gostats "github.com/lyft/gostats"
@@ -111,7 +112,8 @@ func NewJsonHandler(svc pb.RateLimitServiceServer) func(http.ResponseWriter, *ht
 		}
 
 		// Generate trace
-		_, span := tracer.Start(ctx, "NewJsonHandler Remaining Execution",
+		_, span := tracer.Start(
+			ctx, "NewJsonHandler Remaining Execution",
 			trace.WithAttributes(
 				attribute.String("response", resp.String()),
 			),
@@ -146,7 +148,9 @@ func writeHttpStatus(writer http.ResponseWriter, code int) {
 	http.Error(writer, http.StatusText(code), code)
 }
 
-func getProviderImpl(s settings.Settings, statsManager stats.Manager, rootStore gostats.Store) provider.RateLimitConfigProvider {
+func getProviderImpl(
+	s settings.Settings, statsManager stats.Manager, rootStore gostats.Store,
+) provider.RateLimitConfigProvider {
 	switch s.ConfigType {
 	case "FILE":
 		return provider.NewFileProvider(s, statsManager, rootStore)
@@ -230,11 +234,17 @@ func (server *server) Provider() provider.RateLimitConfigProvider {
 	return server.provider
 }
 
-func NewServer(s settings.Settings, name string, statsManager stats.Manager, localCache *freecache.Cache, opts ...settings.Option) Server {
+func NewServer(
+	s settings.Settings, name string, statsManager stats.Manager, localCache *freecache.Cache,
+	opts ...settings.Option,
+) Server {
 	return newServer(s, name, statsManager, localCache, opts...)
 }
 
-func newServer(s settings.Settings, name string, statsManager stats.Manager, localCache *freecache.Cache, opts ...settings.Option) *server {
+func newServer(
+	s settings.Settings, name string, statsManager stats.Manager, localCache *freecache.Cache,
+	opts ...settings.Option,
+) *server {
 	for _, opt := range opts {
 		opt(&s)
 	}
@@ -246,13 +256,19 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 	ret.scope = ret.store.ScopeWithTags(name, s.ExtraTags)
 	ret.store.AddStatGenerator(gostats.NewRuntimeStats(ret.scope.Scope("go")))
 	if localCache != nil {
-		ret.store.AddStatGenerator(limiter.NewLocalCacheStats(localCache, ret.scope.Scope("localcache")))
+		ret.store.AddStatGenerator(
+			limiter.NewLocalCacheStats(
+				localCache, ret.scope.Scope("localcache"),
+			),
+		)
 	}
 
-	keepaliveOpt := grpc.KeepaliveParams(keepalive.ServerParameters{
-		MaxConnectionAge:      s.GrpcMaxConnectionAge,
-		MaxConnectionAgeGrace: s.GrpcMaxConnectionAgeGrace,
-	})
+	keepaliveOpt := grpc.KeepaliveParams(
+		keepalive.ServerParameters{
+			MaxConnectionAge:      s.GrpcMaxConnectionAge,
+			MaxConnectionAgeGrace: s.GrpcMaxConnectionAgeGrace,
+		},
+	)
 	grpcOptions := []grpc.ServerOption{
 		keepaliveOpt,
 		grpc.ChainUnaryInterceptor(
@@ -263,13 +279,17 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 	}
 	if s.GrpcServerUseTLS {
 		grpcServerTlsConfig := s.GrpcServerTlsConfig
-		ret.grpcCertProvider = provider.NewCertProvider(s, ret.store, s.GrpcServerTlsCert, s.GrpcServerTlsKey)
+		ret.grpcCertProvider = provider.NewCertProvider(
+			s, ret.store, s.GrpcServerTlsCert, s.GrpcServerTlsKey,
+		)
 		// Remove the static certificates and use the provider via the GetCertificate function
 		grpcServerTlsConfig.Certificates = nil
 		grpcServerTlsConfig.GetCertificate = ret.grpcCertProvider.GetCertificateFunc()
 		// Verify client SAN if provided
 		if s.GrpcClientTlsSAN != "" {
-			grpcServerTlsConfig.VerifyPeerCertificate = verifyClient(grpcServerTlsConfig.ClientCAs, s.GrpcClientTlsSAN)
+			grpcServerTlsConfig.VerifyPeerCertificate = verifyClient(
+				grpcServerTlsConfig.ClientCAs, s.GrpcClientTlsSAN,
+			)
 		}
 		grpcOptions = append(grpcOptions, grpc.Creds(credentials.NewTLS(grpcServerTlsConfig)))
 	}
@@ -293,7 +313,9 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 	ret.router = mux.NewRouter()
 
 	// setup healthcheck path
-	ret.health = NewHealthChecker(health.NewServer(), "ratelimit", s.HealthyWithAtLeastOneConfigLoaded)
+	ret.health = NewHealthChecker(
+		health.NewServer(), "ratelimit", s.HealthyWithAtLeastOneConfigLoaded,
+	)
 	ret.router.Path("/healthcheck").Handler(ret.health)
 	healthpb.RegisterHealthServer(ret.grpcServer, ret.health.Server())
 
@@ -305,7 +327,8 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 		"root of various pprof endpoints. hit for help.",
 		func(writer http.ResponseWriter, request *http.Request) {
 			pprof.Index(writer, request)
-		})
+		},
+	)
 
 	// setup cpu profiling endpoint
 	ret.AddDebugHttpEndpoint(
@@ -313,17 +336,21 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 		"CPU profiling endpoint",
 		func(writer http.ResponseWriter, request *http.Request) {
 			pprof.Profile(writer, request)
-		})
+		},
+	)
 
 	// setup stats endpoint
 	ret.AddDebugHttpEndpoint(
 		"/stats",
 		"print out stats",
 		func(writer http.ResponseWriter, request *http.Request) {
-			expvar.Do(func(kv expvar.KeyValue) {
-				io.WriteString(writer, fmt.Sprintf("%s: %s\n", kv.Key, kv.Value))
-			})
-		})
+			expvar.Do(
+				func(kv expvar.KeyValue) {
+					io.WriteString(writer, fmt.Sprintf("%s: %s\n", kv.Key, kv.Value))
+				},
+			)
+		},
+	)
 
 	// setup trace endpoint
 	ret.AddDebugHttpEndpoint(
@@ -331,7 +358,8 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 		"trace endpoint",
 		func(writer http.ResponseWriter, request *http.Request) {
 			pprof.Trace(writer, request)
-		})
+		},
+	)
 
 	// setup debug root
 	ret.debugListener.debugMux.HandleFunc(
@@ -345,9 +373,11 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 			sort.Strings(sortedKeys)
 			for _, key := range sortedKeys {
 				io.WriteString(
-					writer, fmt.Sprintf("%s: %s\n", key, ret.debugListener.endpoints[key]))
+					writer, fmt.Sprintf("%s: %s\n", key, ret.debugListener.endpoints[key]),
+				)
 			}
-		})
+		},
+	)
 
 	return ret
 }

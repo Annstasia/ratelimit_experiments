@@ -12,7 +12,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/protobuf/proto"
 
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -21,7 +22,8 @@ import (
 	mock_v3 "github.com/envoyproxy/ratelimit/test/mocks/rls"
 )
 
-func assertHttpResponse(t *testing.T,
+func assertHttpResponse(
+	t *testing.T,
 	handler http.HandlerFunc,
 	requestBody string,
 	expectedStatusCode int,
@@ -31,7 +33,9 @@ func assertHttpResponse(t *testing.T,
 	t.Helper()
 	assert := assert.New(t)
 
-	req := httptest.NewRequest("METHOD_NOT_CHECKED", "/path_not_checked", strings.NewReader(requestBody))
+	req := httptest.NewRequest(
+		"METHOD_NOT_CHECKED", "/path_not_checked", strings.NewReader(requestBody),
+	)
 	w := httptest.NewRecorder()
 	handler(w, req)
 
@@ -48,11 +52,15 @@ func TestJsonHandler(t *testing.T) {
 
 	rls := mock_v3.NewMockRateLimitServiceServer(controller)
 	handler := server.NewJsonHandler(rls)
-	requestMatcher := mock.MatchedBy(func(req *pb.RateLimitRequest) bool {
-		return proto.Equal(req, &pb.RateLimitRequest{
-			Domain: "foo",
-		})
-	})
+	requestMatcher := mock.MatchedBy(
+		func(req *pb.RateLimitRequest) bool {
+			return proto.Equal(
+				req, &pb.RateLimitRequest{
+					Domain: "foo",
+				},
+			)
+		},
+	)
 
 	// Missing request body
 	assertHttpResponse(t, handler, "", 400, "text/plain; charset=utf-8", "Bad Request\n")
@@ -61,26 +69,42 @@ func TestJsonHandler(t *testing.T) {
 	assertHttpResponse(t, handler, "}", 400, "text/plain; charset=utf-8", "Bad Request\n")
 
 	// Unknown response code
-	rls.EXPECT().ShouldRateLimit(context.Background(), requestMatcher).Return(&pb.RateLimitResponse{}, nil)
+	rls.EXPECT().ShouldRateLimit(
+		context.Background(), requestMatcher,
+	).Return(&pb.RateLimitResponse{}, nil)
 	assertHttpResponse(t, handler, `{"domain": "foo"}`, 500, "application/json", "{}")
 
 	// ratelimit service error
-	rls.EXPECT().ShouldRateLimit(context.Background(), requestMatcher).Return(nil, fmt.Errorf("some error"))
-	assertHttpResponse(t, handler, `{"domain": "foo"}`, 400, "text/plain; charset=utf-8", "Bad Request\n")
+	rls.EXPECT().ShouldRateLimit(context.Background(), requestMatcher).Return(
+		nil, fmt.Errorf("some error"),
+	)
+	assertHttpResponse(
+		t, handler, `{"domain": "foo"}`, 400, "text/plain; charset=utf-8", "Bad Request\n",
+	)
 
 	// json unmarshaling error
 	rls.EXPECT().ShouldRateLimit(context.Background(), requestMatcher).Return(nil, nil)
-	assertHttpResponse(t, handler, `{"domain": "foo"}`, 500, "text/plain; charset=utf-8", "Internal Server Error\n")
+	assertHttpResponse(
+		t, handler, `{"domain": "foo"}`, 500, "text/plain; charset=utf-8", "Internal Server Error\n",
+	)
 
 	// successful request, not rate limited
-	rls.EXPECT().ShouldRateLimit(context.Background(), requestMatcher).Return(&pb.RateLimitResponse{
-		OverallCode: pb.RateLimitResponse_OK,
-	}, nil)
-	assertHttpResponse(t, handler, `{"domain": "foo"}`, 200, "application/json", `{"overallCode":"OK"}`)
+	rls.EXPECT().ShouldRateLimit(context.Background(), requestMatcher).Return(
+		&pb.RateLimitResponse{
+			OverallCode: pb.RateLimitResponse_OK,
+		}, nil,
+	)
+	assertHttpResponse(
+		t, handler, `{"domain": "foo"}`, 200, "application/json", `{"overallCode":"OK"}`,
+	)
 
 	// successful request, rate limited
-	rls.EXPECT().ShouldRateLimit(context.Background(), requestMatcher).Return(&pb.RateLimitResponse{
-		OverallCode: pb.RateLimitResponse_OVER_LIMIT,
-	}, nil)
-	assertHttpResponse(t, handler, `{"domain": "foo"}`, 429, "application/json", `{"overallCode":"OVER_LIMIT"}`)
+	rls.EXPECT().ShouldRateLimit(context.Background(), requestMatcher).Return(
+		&pb.RateLimitResponse{
+			OverallCode: pb.RateLimitResponse_OVER_LIMIT,
+		}, nil,
+	)
+	assertHttpResponse(
+		t, handler, `{"domain": "foo"}`, 429, "application/json", `{"overallCode":"OVER_LIMIT"}`,
+	)
 }

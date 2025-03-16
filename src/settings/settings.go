@@ -216,7 +216,10 @@ func RedisTlsConfig(redisTls bool) Option {
 		// so let's just initialize to what we want the correct value to be.
 		s.RedisTlsConfig = &tls.Config{}
 		if redisTls {
-			s.RedisTlsConfig = utils.TlsConfigFromFiles(s.RedisTlsClientCert, s.RedisTlsClientKey, s.RedisTlsCACert, utils.ServerCA, s.RedisTlsSkipHostnameVerification)
+			s.RedisTlsConfig = utils.TlsConfigFromFiles(
+				s.RedisTlsClientCert, s.RedisTlsClientKey, s.RedisTlsCACert, utils.ServerCA,
+				s.RedisTlsSkipHostnameVerification,
+			)
 		}
 	}
 }
@@ -225,7 +228,10 @@ func MemcacheTlsConfig(memcacheTls bool) Option {
 	return func(s *Settings) {
 		s.MemcacheTlsConfig = &tls.Config{}
 		if memcacheTls {
-			s.MemcacheTlsConfig = utils.TlsConfigFromFiles(s.MemcacheTlsClientCert, s.MemcacheTlsClientKey, s.MemcacheTlsCACert, utils.ServerCA, s.MemcacheTlsSkipHostnameVerification)
+			s.MemcacheTlsConfig = utils.TlsConfigFromFiles(
+				s.MemcacheTlsClientCert, s.MemcacheTlsClientKey, s.MemcacheTlsCACert,
+				utils.ServerCA, s.MemcacheTlsSkipHostnameVerification,
+			)
 		}
 	}
 }
@@ -233,7 +239,10 @@ func MemcacheTlsConfig(memcacheTls bool) Option {
 func GrpcServerTlsConfig() Option {
 	return func(s *Settings) {
 		if s.GrpcServerUseTLS {
-			grpcServerTlsConfig := utils.TlsConfigFromFiles(s.GrpcServerTlsCert, s.GrpcServerTlsKey, s.GrpcClientTlsCACert, utils.ClientCA, false)
+			grpcServerTlsConfig := utils.TlsConfigFromFiles(
+				s.GrpcServerTlsCert, s.GrpcServerTlsKey, s.GrpcClientTlsCACert, utils.ClientCA,
+				false,
+			)
 			if s.GrpcClientTlsCACert != "" {
 				grpcServerTlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 			} else {
@@ -247,7 +256,10 @@ func GrpcServerTlsConfig() Option {
 func ConfigGrpcXdsServerTlsConfig() Option {
 	return func(s *Settings) {
 		if s.ConfigGrpcXdsServerUseTls {
-			configGrpcXdsServerTlsConfig := utils.TlsConfigFromFiles(s.ConfigGrpcXdsClientTlsCert, s.ConfigGrpcXdsClientTlsKey, s.ConfigGrpcXdsServerTlsCACert, utils.ServerCA, false)
+			configGrpcXdsServerTlsConfig := utils.TlsConfigFromFiles(
+				s.ConfigGrpcXdsClientTlsCert, s.ConfigGrpcXdsClientTlsKey,
+				s.ConfigGrpcXdsServerTlsCACert, utils.ServerCA, false,
+			)
 			if s.ConfigGrpcXdsServerTlsCACert != "" {
 				configGrpcXdsServerTlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 			} else {

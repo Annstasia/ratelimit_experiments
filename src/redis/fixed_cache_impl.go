@@ -10,7 +10,8 @@ import (
 	"github.com/envoyproxy/ratelimit/src/stats"
 
 	"github.com/coocood/freecache"
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	logger "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 
@@ -32,7 +33,10 @@ type fixedRateLimitCacheImpl struct {
 	baseRateLimiter                    *limiter.BaseRateLimiter
 }
 
-func pipelineAppend(client Client, pipeline *Pipeline, key string, hitsAddend uint64, result *uint64, expirationSeconds int64) {
+func pipelineAppend(
+	client Client, pipeline *Pipeline, key string, hitsAddend uint64, result *uint64,
+	expirationSeconds int64,
+) {
 	*pipeline = client.PipeAppend(*pipeline, result, "INCRBY", key, hitsAddend)
 	*pipeline = client.PipeAppend(*pipeline, nil, "EXPIRE", key, expirationSeconds)
 }
@@ -41,8 +45,10 @@ func pipelineAppendtoGet(client Client, pipeline *Pipeline, key string, result *
 	*pipeline = client.PipeAppend(*pipeline, result, "GET", key)
 }
 
-func (this *fixedRateLimitCacheImpl) getHitsAddend(hitsAddend uint64, isCacheKeyOverlimit, isCacheKeyNearlimit,
-	isNearLimt bool) uint64 {
+func (this *fixedRateLimitCacheImpl) getHitsAddend(
+	hitsAddend uint64, isCacheKeyOverlimit, isCacheKeyNearlimit,
+	isNearLimt bool,
+) uint64 {
 	// If stopCacheKeyIncrementWhenOverlimit is false, then we always increment the cache key.
 	if !this.stopCacheKeyIncrementWhenOverlimit {
 		return hitsAddend
@@ -101,7 +107,10 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 		// Check if key is over the limit in local cache.
 		if this.baseRateLimiter.IsOverLimitWithLocalCache(cacheKey.Key) {
 			if limits[i].ShadowMode {
-				logger.Debugf("Cache key %s would be rate limited but shadow mode is enabled on this rule", cacheKey.Key)
+				logger.Debugf(
+					"Cache key %s would be rate limited but shadow mode is enabled on this rule",
+					cacheKey.Key,
+				)
 			} else {
 				logger.Debugf("cache key is over the limit: %s", cacheKey.Key)
 			}
@@ -123,7 +132,9 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 				if perSecondPipelineToGet == nil {
 					perSecondPipelineToGet = Pipeline{}
 				}
-				pipelineAppendtoGet(this.perSecondClient, &perSecondPipelineToGet, cacheKey.Key, &currentCount[i])
+				pipelineAppendtoGet(
+					this.perSecondClient, &perSecondPipelineToGet, cacheKey.Key, &currentCount[i],
+				)
 			} else {
 				if pipelineToGet == nil {
 					pipelineToGet = Pipeline{}
@@ -147,7 +158,9 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			limitBeforeIncrease := currentCount[i]
 			limitAfterIncrease := limitBeforeIncrease + hitsAddends[i]
 
-			limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
+			limitInfo := limiter.NewRateLimitInfo(
+				limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0,
+			)
 
 			if this.baseRateLimiter.IsOverLimitThresholdReached(limitInfo) {
 				nearlimitIndexes[i] = true
@@ -174,19 +187,28 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			if perSecondPipeline == nil {
 				perSecondPipeline = Pipeline{}
 			}
-			pipelineAppend(this.perSecondClient, &perSecondPipeline, cacheKey.Key, this.getHitsAddend(hitsAddends[i],
-				isCacheKeyOverlimit, isCacheKeyNearlimit, nearlimitIndexes[i]), &results[i], expirationSeconds)
+			pipelineAppend(
+				this.perSecondClient, &perSecondPipeline, cacheKey.Key, this.getHitsAddend(
+					hitsAddends[i],
+					isCacheKeyOverlimit, isCacheKeyNearlimit, nearlimitIndexes[i],
+				), &results[i], expirationSeconds,
+			)
 		} else {
 			if pipeline == nil {
 				pipeline = Pipeline{}
 			}
-			pipelineAppend(this.client, &pipeline, cacheKey.Key, this.getHitsAddend(hitsAddends[i], isCacheKeyOverlimit,
-				isCacheKeyNearlimit, nearlimitIndexes[i]), &results[i], expirationSeconds)
+			pipelineAppend(
+				this.client, &pipeline, cacheKey.Key, this.getHitsAddend(
+					hitsAddends[i], isCacheKeyOverlimit,
+					isCacheKeyNearlimit, nearlimitIndexes[i],
+				), &results[i], expirationSeconds,
+			)
 		}
 	}
 
 	// Generate trace
-	_, span := tracer.Start(ctx, "Redis Pipeline Execution",
+	_, span := tracer.Start(
+		ctx, "Redis Pipeline Execution",
 		trace.WithAttributes(
 			attribute.Int("pipeline length", len(pipeline)),
 			attribute.Int("perSecondPipeline length", len(perSecondPipeline)),
@@ -202,17 +224,23 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 	}
 
 	// Now fetch the pipeline.
-	responseDescriptorStatuses := make([]*pb.RateLimitResponse_DescriptorStatus,
-		len(request.Descriptors))
+	responseDescriptorStatuses := make(
+		[]*pb.RateLimitResponse_DescriptorStatus,
+		len(request.Descriptors),
+	)
 	for i, cacheKey := range cacheKeys {
 
 		limitAfterIncrease := results[i]
 		limitBeforeIncrease := limitAfterIncrease - hitsAddends[i]
 
-		limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
+		limitInfo := limiter.NewRateLimitInfo(
+			limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0,
+		)
 
-		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(cacheKey.Key,
-			limitInfo, isOverLimitWithLocalCache[i], hitsAddends[i])
+		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(
+			cacheKey.Key,
+			limitInfo, isOverLimitWithLocalCache[i], hitsAddends[i],
+		)
 
 	}
 
@@ -222,14 +250,19 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 // Flush() is a no-op with redis since quota reads and updates happen synchronously.
 func (this *fixedRateLimitCacheImpl) Flush() {}
 
-func NewFixedRateLimitCacheImpl(client Client, perSecondClient Client, timeSource utils.TimeSource,
-	jitterRand *rand.Rand, expirationJitterMaxSeconds int64, localCache *freecache.Cache, nearLimitRatio float32, cacheKeyPrefix string, statsManager stats.Manager,
+func NewFixedRateLimitCacheImpl(
+	client Client, perSecondClient Client, timeSource utils.TimeSource,
+	jitterRand *rand.Rand, expirationJitterMaxSeconds int64, localCache *freecache.Cache,
+	nearLimitRatio float32, cacheKeyPrefix string, statsManager stats.Manager,
 	stopCacheKeyIncrementWhenOverlimit bool,
 ) limiter.RateLimitCache {
 	return &fixedRateLimitCacheImpl{
 		client:                             client,
 		perSecondClient:                    perSecondClient,
 		stopCacheKeyIncrementWhenOverlimit: stopCacheKeyIncrementWhenOverlimit,
-		baseRateLimiter:                    limiter.NewBaseRateLimit(timeSource, jitterRand, expirationJitterMaxSeconds, localCache, nearLimitRatio, cacheKeyPrefix, statsManager),
+		baseRateLimiter: limiter.NewBaseRateLimit(
+			timeSource, jitterRand, expirationJitterMaxSeconds, localCache, nearLimitRatio,
+			cacheKeyPrefix, statsManager,
+		),
 	}
 }

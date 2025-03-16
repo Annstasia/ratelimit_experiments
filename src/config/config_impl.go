@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	logger "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"gopkg.in/yaml.v2"
@@ -76,7 +77,8 @@ var validKeys = map[string]bool{
 // @param rlStats supplies the stats structure associated with the RateLimit
 // @param unlimited supplies whether the rate limit is unlimited
 // @return the new config entry.
-func NewRateLimit(requestsPerUnit uint32, unit pb.RateLimitResponse_RateLimit_Unit, rlStats stats.RateLimitStats,
+func NewRateLimit(
+	requestsPerUnit uint32, unit pb.RateLimitResponse_RateLimit_Unit, rlStats stats.RateLimitStats,
 	unlimited bool, shadowMode bool, name string, replaces []string, detailedMetric bool,
 ) *RateLimit {
 	return &RateLimit{
@@ -101,7 +103,8 @@ func (this *rateLimitDescriptor) dump() string {
 	if this.limit != nil {
 		ret += fmt.Sprintf(
 			"%s: unit=%s requests_per_unit=%d, shadow_mode: %t\n", this.limit.FullKey,
-			this.limit.Limit.Unit.String(), this.limit.Limit.RequestsPerUnit, this.limit.ShadowMode)
+			this.limit.Limit.Unit.String(), this.limit.Limit.RequestsPerUnit, this.limit.ShadowMode,
+		)
 	}
 	for _, descriptor := range this.descriptors {
 		ret += descriptor.dump()
@@ -121,7 +124,10 @@ func newRateLimitConfigError(name string, err string) RateLimitConfigError {
 // @param parentKey supplies the fully resolved key name that owns this config level.
 // @param descriptors supplies the YAML descriptors to load.
 // @param statsManager that owns the stats.Scope.
-func (this *rateLimitDescriptor) loadDescriptors(config RateLimitConfigToLoad, parentKey string, descriptors []YamlDescriptor, statsManager stats.Manager) {
+func (this *rateLimitDescriptor) loadDescriptors(
+	config RateLimitConfigToLoad, parentKey string, descriptors []YamlDescriptor,
+	statsManager stats.Manager,
+) {
 	for _, descriptorConfig := range descriptors {
 		if descriptorConfig.Key == "" {
 			panic(newRateLimitConfigError(config.Name, "descriptor has empty key"))
@@ -135,8 +141,12 @@ func (this *rateLimitDescriptor) loadDescriptors(config RateLimitConfigToLoad, p
 
 		newParentKey := parentKey + finalKey
 		if _, present := this.descriptors[finalKey]; present {
-			panic(newRateLimitConfigError(
-				config.Name, fmt.Sprintf("duplicate descriptor composite key '%s'", newParentKey)))
+			panic(
+				newRateLimitConfigError(
+					config.Name,
+					fmt.Sprintf("duplicate descriptor composite key '%s'", newParentKey),
+				),
+			)
 		}
 
 		var rateLimit *RateLimit = nil
@@ -149,14 +159,20 @@ func (this *rateLimitDescriptor) loadDescriptors(config RateLimitConfigToLoad, p
 
 			if unlimited {
 				if validUnit {
-					panic(newRateLimitConfigError(
-						config.Name,
-						"should not specify rate limit unit when unlimited"))
+					panic(
+						newRateLimitConfigError(
+							config.Name,
+							"should not specify rate limit unit when unlimited",
+						),
+					)
 				}
 			} else if !validUnit {
-				panic(newRateLimitConfigError(
-					config.Name,
-					fmt.Sprintf("invalid rate limit unit '%s'", descriptorConfig.RateLimit.Unit)))
+				panic(
+					newRateLimitConfigError(
+						config.Name,
+						fmt.Sprintf("invalid rate limit unit '%s'", descriptorConfig.RateLimit.Unit),
+					),
+				)
 			}
 
 			replaces := make([]string, len(descriptorConfig.RateLimit.Replaces))
@@ -165,28 +181,42 @@ func (this *rateLimitDescriptor) loadDescriptors(config RateLimitConfigToLoad, p
 			}
 
 			rateLimit = NewRateLimit(
-				descriptorConfig.RateLimit.RequestsPerUnit, pb.RateLimitResponse_RateLimit_Unit(value),
+				descriptorConfig.RateLimit.RequestsPerUnit,
+				pb.RateLimitResponse_RateLimit_Unit(value),
 				statsManager.NewStats(newParentKey), unlimited, descriptorConfig.ShadowMode,
 				descriptorConfig.RateLimit.Name, replaces, descriptorConfig.DetailedMetric,
 			)
 			rateLimitDebugString = fmt.Sprintf(
-				" ratelimit={requests_per_unit=%d, unit=%s, unlimited=%t, shadow_mode=%t}", rateLimit.Limit.RequestsPerUnit,
-				rateLimit.Limit.Unit.String(), rateLimit.Unlimited, rateLimit.ShadowMode)
+				" ratelimit={requests_per_unit=%d, unit=%s, unlimited=%t, shadow_mode=%t}",
+				rateLimit.Limit.RequestsPerUnit,
+				rateLimit.Limit.Unit.String(), rateLimit.Unlimited, rateLimit.ShadowMode,
+			)
 
 			for _, replaces := range descriptorConfig.RateLimit.Replaces {
 				if replaces.Name == "" {
-					panic(newRateLimitConfigError(config.Name, "should not have an empty replaces entry"))
+					panic(
+						newRateLimitConfigError(
+							config.Name, "should not have an empty replaces entry",
+						),
+					)
 				}
 				if replaces.Name == descriptorConfig.RateLimit.Name {
-					panic(newRateLimitConfigError(config.Name, "replaces should not contain name of same descriptor"))
+					panic(
+						newRateLimitConfigError(
+							config.Name, "replaces should not contain name of same descriptor",
+						),
+					)
 				}
 			}
 		}
 
 		logger.Debugf(
-			"loading descriptor: key=%s%s", newParentKey, rateLimitDebugString)
+			"loading descriptor: key=%s%s", newParentKey, rateLimitDebugString,
+		)
 		newDescriptor := &rateLimitDescriptor{map[string]*rateLimitDescriptor{}, rateLimit, nil}
-		newDescriptor.loadDescriptors(config, newParentKey+".", descriptorConfig.Descriptors, statsManager)
+		newDescriptor.loadDescriptors(
+			config, newParentKey+".", descriptorConfig.Descriptors, statsManager,
+		)
 		this.descriptors[finalKey] = newDescriptor
 
 		// Preload keys ending with "*" symbol.
@@ -215,7 +245,9 @@ func validateYamlKeys(fileName string, config_map map[interface{}]interface{}) {
 		case []interface{}:
 			for _, e := range v {
 				if _, ok := e.(map[interface{}]interface{}); !ok {
-					errorText := fmt.Sprintf("config error, yaml file contains list of type other than map: %v", e)
+					errorText := fmt.Sprintf(
+						"config error, yaml file contains list of type other than map: %v", e,
+					)
 					logger.Debugf(errorText)
 					panic(newRateLimitConfigError(fileName, errorText))
 				}
@@ -252,12 +284,17 @@ func (this *rateLimitConfigImpl) loadConfig(config RateLimitConfigToLoad) {
 
 	if _, present := this.domains[root.Domain]; present {
 		if !this.mergeDomainConfigs {
-			panic(newRateLimitConfigError(
-				config.Name, fmt.Sprintf("duplicate domain '%s' in config file", root.Domain)))
+			panic(
+				newRateLimitConfigError(
+					config.Name, fmt.Sprintf("duplicate domain '%s' in config file", root.Domain),
+				),
+			)
 		}
 
 		logger.Debugf("patching domain: %s", root.Domain)
-		this.domains[root.Domain].loadDescriptors(config, root.Domain+".", root.Descriptors, this.statsManager)
+		this.domains[root.Domain].loadDescriptors(
+			config, root.Domain+".", root.Descriptors, this.statsManager,
+		)
 		return
 	}
 
@@ -354,7 +391,12 @@ func (this *rateLimitConfigImpl) GetLimit(
 			descriptorsMap = nextDescriptor.descriptors
 		} else {
 			if rateLimit != nil && rateLimit.DetailedMetric {
-				rateLimit = NewRateLimit(rateLimit.Limit.RequestsPerUnit, rateLimit.Limit.Unit, this.statsManager.NewStats(rateLimit.FullKey), rateLimit.Unlimited, rateLimit.ShadowMode, rateLimit.Name, rateLimit.Replaces, rateLimit.DetailedMetric)
+				rateLimit = NewRateLimit(
+					rateLimit.Limit.RequestsPerUnit, rateLimit.Limit.Unit,
+					this.statsManager.NewStats(rateLimit.FullKey), rateLimit.Unlimited,
+					rateLimit.ShadowMode, rateLimit.Name, rateLimit.Replaces,
+					rateLimit.DetailedMetric,
+				)
 			}
 
 			break

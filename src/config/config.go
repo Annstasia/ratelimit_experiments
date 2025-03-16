@@ -2,7 +2,8 @@ package config
 
 import (
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	"golang.org/x/net/context"
 
 	"github.com/envoyproxy/ratelimit/src/stats"
@@ -37,7 +38,9 @@ type RateLimitConfig interface {
 	// @param domain supplies the domain to lookup the descriptor in.
 	// @param descriptor supplies the descriptor to look up.
 	// @return a rate limit to apply or nil if no rate limit is configured for the descriptor.
-	GetLimit(ctx context.Context, domain string, descriptor *pb_struct.RateLimitDescriptor) *RateLimit
+	GetLimit(
+		ctx context.Context, domain string, descriptor *pb_struct.RateLimitDescriptor,
+	) *RateLimit
 
 	// Check if the domains is empty which corresponds to no config loaded.
 	IsEmptyDomains() bool
@@ -57,5 +60,7 @@ type RateLimitConfigLoader interface {
 	// @param mergeDomainConfigs defines whether multiple configurations referencing the same domain will be merged or rejected throwing an error.
 	// @return a new configuration.
 	// @throws RateLimitConfigError if the configuration could not be created.
-	Load(configs []RateLimitConfigToLoad, statsManager stats.Manager, mergeDomainConfigs bool) RateLimitConfig
+	Load(
+		configs []RateLimitConfigToLoad, statsManager stats.Manager, mergeDomainConfigs bool,
+	) RateLimitConfig
 }

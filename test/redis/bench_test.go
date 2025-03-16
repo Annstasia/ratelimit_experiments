@@ -9,7 +9,8 @@ import (
 
 	"github.com/envoyproxy/ratelimit/test/mocks/stats"
 
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	gostats "github.com/lyft/gostats"
 
 	"github.com/envoyproxy/ratelimit/src/config"
@@ -31,25 +32,38 @@ func BenchmarkParallelDoLimit(b *testing.B) {
 	do := func(b *testing.B, fn func() error) {
 		b.ResetTimer()
 		b.SetParallelism(parallel)
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				if err := fn(); err != nil {
-					b.Fatal(err)
+		b.RunParallel(
+			func(pb *testing.PB) {
+				for pb.Next() {
+					if err := fn(); err != nil {
+						b.Fatal(err)
+					}
 				}
-			}
-		})
+			},
+		)
 	}
 
 	mkDoLimitBench := func(pipelineWindow time.Duration, pipelineLimit int) func(*testing.B) {
 		return func(b *testing.B) {
 			statsStore := gostats.NewStore(gostats.NewNullSink(), false)
 			sm := stats.NewMockStatManager(statsStore)
-			client := redis.NewClientImpl(statsStore, false, "", "tcp", "single", "127.0.0.1:6379", poolSize, pipelineWindow, pipelineLimit, nil, false, nil)
+			client := redis.NewClientImpl(
+				statsStore, false, "", "tcp", "single", "127.0.0.1:6379", poolSize, pipelineWindow,
+				pipelineLimit, nil, false, nil,
+			)
 			defer client.Close()
 
-			cache := redis.NewFixedRateLimitCacheImpl(client, nil, utils.NewTimeSourceImpl(), rand.New(utils.NewLockedSource(time.Now().Unix())), 10, nil, 0.8, "", sm, true)
+			cache := redis.NewFixedRateLimitCacheImpl(
+				client, nil, utils.NewTimeSourceImpl(),
+				rand.New(utils.NewLockedSource(time.Now().Unix())), 10, nil, 0.8, "", sm, true,
+			)
 			request := common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value"}}}, 1)
-			limits := []*config.RateLimit{config.NewRateLimit(1000000000, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value"), false, false, "", nil, false)}
+			limits := []*config.RateLimit{
+				config.NewRateLimit(
+					1000000000, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value"),
+					false, false, "", nil, false,
+				),
+			}
 
 			// wait for the pool to fill up
 			for {
@@ -61,10 +75,12 @@ func BenchmarkParallelDoLimit(b *testing.B) {
 
 			b.ResetTimer()
 
-			do(b, func() error {
-				cache.DoLimit(context.Background(), request, limits)
-				return nil
-			})
+			do(
+				b, func() error {
+					cache.DoLimit(context.Background(), request, limits)
+					return nil
+				},
+			)
 		}
 	}
 

@@ -8,8 +8,9 @@ import (
 	"github.com/envoyproxy/ratelimit/test/common"
 
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	pb_type "github.com/envoyproxy/go-control-plane/envoy/type/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 	stats "github.com/lyft/gostats"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,7 +31,9 @@ func loadFile(path string) []config.RateLimitConfigToLoad {
 func TestBasicConfig(t *testing.T) {
 	assert := assert.New(t)
 	stats := stats.NewStore(stats.NewNullSink(), false)
-	rlConfig := config.NewRateLimitConfigImpl(loadFile("basic_config.yaml"), mockstats.NewMockStatManager(stats), false)
+	rlConfig := config.NewRateLimitConfigImpl(
+		loadFile("basic_config.yaml"), mockstats.NewMockStatManager(stats), false,
+	)
 	rlConfig.Dump()
 	assert.Equal(rlConfig.IsEmptyDomains(), false)
 	assert.EqualValues(0, stats.NewCounter("foo_domain.domain_not_found").Value())
@@ -43,35 +46,46 @@ func TestBasicConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "something"}},
-		})
+		},
+	)
 	assert.Nil(rl)
 
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}},
-		})
+		},
+	)
 	assert.Nil(rl)
 
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key2", Value: "value2"}, {Key: "subkey", Value: "subvalue"}},
-		})
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{Key: "key2", Value: "value2"}, {Key: "subkey", Value: "subvalue"},
+			},
+		},
+	)
 	assert.Nil(rl)
 
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key5", Value: "value5"}, {Key: "subkey5", Value: "subvalue"}},
-		})
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{Key: "key5", Value: "value5"}, {Key: "subkey5", Value: "subvalue"},
+			},
+		},
+	)
 	assert.Nil(rl)
 
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something"}},
-		})
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something"},
+			},
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -86,8 +100,11 @@ func TestBasicConfig(t *testing.T) {
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "subvalue1"}},
-		})
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "subvalue1"},
+			},
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -95,19 +112,24 @@ func TestBasicConfig(t *testing.T) {
 	assert.EqualValues(10, rl.Limit.RequestsPerUnit)
 	assert.Equal(pb.RateLimitResponse_RateLimit_SECOND, rl.Limit.Unit)
 	assert.EqualValues(
-		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.total_hits").Value())
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.total_hits").Value(),
+	)
 	assert.EqualValues(
-		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.over_limit").Value())
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.over_limit").Value(),
+	)
 	assert.EqualValues(
-		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.near_limit").Value())
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.near_limit").Value(),
+	)
 	assert.EqualValues(
-		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.within_limit").Value())
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.within_limit").Value(),
+	)
 
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key2", Value: "something"}},
-		})
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -123,7 +145,8 @@ func TestBasicConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key2", Value: "value2"}},
-		})
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -139,14 +162,16 @@ func TestBasicConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key2", Value: "value3"}},
-		})
+		},
+	)
 	assert.Nil(rl)
 
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key3", Value: "foo"}},
-		})
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -163,7 +188,8 @@ func TestBasicConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key4", Value: "foo"}},
-		})
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -180,7 +206,8 @@ func TestBasicConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key6", Value: "foo"}},
-		})
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.WithinLimit.Inc()
 	assert.True(rl.Unlimited)
@@ -192,8 +219,13 @@ func TestBasicConfig(t *testing.T) {
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key7", Value: "unspecified_value"}},
-		})
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{
+					Key: "key7", Value: "unspecified_value",
+				},
+			},
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -203,7 +235,9 @@ func TestBasicConfig(t *testing.T) {
 	assert.EqualValues(1, stats.NewCounter("test-domain.key7_unspecified_value.total_hits").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key7_unspecified_value.over_limit").Value())
 	assert.EqualValues(1, stats.NewCounter("test-domain.key7_unspecified_value.near_limit").Value())
-	assert.EqualValues(1, stats.NewCounter("test-domain.key7_unspecified_value.within_limit").Value())
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key7_unspecified_value.within_limit").Value(),
+	)
 
 	// Another value for the key with detailed_metric: true
 	// should also generate a stat with the value included
@@ -211,7 +245,8 @@ func TestBasicConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key7", Value: "another_value"}},
-		})
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -240,7 +275,8 @@ func TestDomainMerge(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}},
-		})
+		},
+	)
 	assert.NotNil(rl)
 	assert.EqualValues(10, rl.Limit.RequestsPerUnit)
 
@@ -248,7 +284,8 @@ func TestDomainMerge(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key2", Value: "value2"}},
-		})
+		},
+	)
 	assert.NotNil(rl)
 	assert.EqualValues(20, rl.Limit.RequestsPerUnit)
 }
@@ -256,81 +293,126 @@ func TestDomainMerge(t *testing.T) {
 func TestConfigLimitOverride(t *testing.T) {
 	assert := assert.New(t)
 	stats := stats.NewStore(stats.NewNullSink(), false)
-	rlConfig := config.NewRateLimitConfigImpl(loadFile("basic_config.yaml"), mockstats.NewMockStatManager(stats), false)
+	rlConfig := config.NewRateLimitConfigImpl(
+		loadFile("basic_config.yaml"), mockstats.NewMockStatManager(stats), false,
+	)
 	rlConfig.Dump()
 	// No matching domain
-	assert.Nil(rlConfig.GetLimit(context.TODO(), "foo_domain", &pb_struct.RateLimitDescriptor{
-		Limit: &pb_struct.RateLimitDescriptor_RateLimitOverride{
-			RequestsPerUnit: 10, Unit: pb_type.RateLimitUnit_DAY,
-		},
-	}))
+	assert.Nil(
+		rlConfig.GetLimit(
+			context.TODO(), "foo_domain", &pb_struct.RateLimitDescriptor{
+				Limit: &pb_struct.RateLimitDescriptor_RateLimitOverride{
+					RequestsPerUnit: 10, Unit: pb_type.RateLimitUnit_DAY,
+				},
+			},
+		),
+	)
 	rl := rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something"}},
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something"},
+			},
 			Limit: &pb_struct.RateLimitDescriptor_RateLimitOverride{
 				RequestsPerUnit: 10, Unit: pb_type.RateLimitUnit_DAY,
 			},
-		})
+		},
+	)
 	assert.Equal("test-domain.key1_value1.subkey1_something", rl.FullKey)
-	common.AssertProtoEqual(assert, &pb.RateLimitResponse_RateLimit{
-		RequestsPerUnit: 10,
-		Unit:            pb.RateLimitResponse_RateLimit_DAY,
-	}, rl.Limit)
+	common.AssertProtoEqual(
+		assert, &pb.RateLimitResponse_RateLimit{
+			RequestsPerUnit: 10,
+			Unit:            pb.RateLimitResponse_RateLimit_DAY,
+		}, rl.Limit,
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
 	rl.Stats.WithinLimit.Inc()
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_something.total_hits").Value())
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_something.over_limit").Value())
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_something.near_limit").Value())
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_something.within_limit").Value())
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_something.total_hits").Value(),
+	)
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_something.over_limit").Value(),
+	)
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_something.near_limit").Value(),
+	)
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_something.within_limit").Value(),
+	)
 
 	// Change in override value doesn't erase stats
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something"}},
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something"},
+			},
 			Limit: &pb_struct.RateLimitDescriptor_RateLimitOverride{
 				RequestsPerUnit: 42, Unit: pb_type.RateLimitUnit_HOUR,
 			},
-		})
+		},
+	)
 	assert.Equal("test-domain.key1_value1.subkey1_something", rl.FullKey)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
 	rl.Stats.WithinLimit.Inc()
-	common.AssertProtoEqual(assert, &pb.RateLimitResponse_RateLimit{
-		RequestsPerUnit: 42,
-		Unit:            pb.RateLimitResponse_RateLimit_HOUR,
-	}, rl.Limit)
-	assert.EqualValues(2, stats.NewCounter("test-domain.key1_value1.subkey1_something.total_hits").Value())
-	assert.EqualValues(2, stats.NewCounter("test-domain.key1_value1.subkey1_something.over_limit").Value())
-	assert.EqualValues(2, stats.NewCounter("test-domain.key1_value1.subkey1_something.near_limit").Value())
-	assert.EqualValues(2, stats.NewCounter("test-domain.key1_value1.subkey1_something.within_limit").Value())
+	common.AssertProtoEqual(
+		assert, &pb.RateLimitResponse_RateLimit{
+			RequestsPerUnit: 42,
+			Unit:            pb.RateLimitResponse_RateLimit_HOUR,
+		}, rl.Limit,
+	)
+	assert.EqualValues(
+		2, stats.NewCounter("test-domain.key1_value1.subkey1_something.total_hits").Value(),
+	)
+	assert.EqualValues(
+		2, stats.NewCounter("test-domain.key1_value1.subkey1_something.over_limit").Value(),
+	)
+	assert.EqualValues(
+		2, stats.NewCounter("test-domain.key1_value1.subkey1_something.near_limit").Value(),
+	)
+	assert.EqualValues(
+		2, stats.NewCounter("test-domain.key1_value1.subkey1_something.within_limit").Value(),
+	)
 
 	// Different value creates a different counter
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something_else"}},
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something_else"},
+			},
 			Limit: &pb_struct.RateLimitDescriptor_RateLimitOverride{
 				RequestsPerUnit: 42, Unit: pb_type.RateLimitUnit_HOUR,
 			},
-		})
+		},
+	)
 	assert.Equal("test-domain.key1_value1.subkey1_something_else", rl.FullKey)
-	common.AssertProtoEqual(assert, &pb.RateLimitResponse_RateLimit{
-		RequestsPerUnit: 42,
-		Unit:            pb.RateLimitResponse_RateLimit_HOUR,
-	}, rl.Limit)
+	common.AssertProtoEqual(
+		assert, &pb.RateLimitResponse_RateLimit{
+			RequestsPerUnit: 42,
+			Unit:            pb.RateLimitResponse_RateLimit_HOUR,
+		}, rl.Limit,
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
 	rl.Stats.WithinLimit.Inc()
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_something_else.total_hits").Value())
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_something_else.over_limit").Value())
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_something_else.near_limit").Value())
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_something_else.within_limit").Value())
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_something_else.total_hits").Value(),
+	)
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_something_else.over_limit").Value(),
+	)
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_something_else.near_limit").Value(),
+	)
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_something_else.within_limit").Value(),
+	)
 }
 
 func expectConfigPanic(t *testing.T, call func(), expectedError string) {
@@ -349,9 +431,12 @@ func TestEmptyDomain(t *testing.T) {
 		t,
 		func() {
 			config.NewRateLimitConfigImpl(
-				loadFile("empty_domain.yaml"), mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				loadFile("empty_domain.yaml"),
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"empty_domain.yaml: config file cannot have empty domain")
+		"empty_domain.yaml: config file cannot have empty domain",
+	)
 }
 
 func TestDuplicateDomain(t *testing.T) {
@@ -360,9 +445,13 @@ func TestDuplicateDomain(t *testing.T) {
 		func() {
 			files := loadFile("basic_config.yaml")
 			files = append(files, loadFile("duplicate_domain.yaml")...)
-			config.NewRateLimitConfigImpl(files, mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+			config.NewRateLimitConfigImpl(
+				files, mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)),
+				false,
+			)
 		},
-		"duplicate_domain.yaml: duplicate domain 'test-domain' in config file")
+		"duplicate_domain.yaml: duplicate domain 'test-domain' in config file",
+	)
 }
 
 func TestEmptyKey(t *testing.T) {
@@ -371,9 +460,11 @@ func TestEmptyKey(t *testing.T) {
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("empty_key.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"empty_key.yaml: descriptor has empty key")
+		"empty_key.yaml: descriptor has empty key",
+	)
 }
 
 func TestDuplicateKey(t *testing.T) {
@@ -382,9 +473,11 @@ func TestDuplicateKey(t *testing.T) {
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("duplicate_key.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"duplicate_key.yaml: duplicate descriptor composite key 'test-domain.key1_value1'")
+		"duplicate_key.yaml: duplicate descriptor composite key 'test-domain.key1_value1'",
+	)
 }
 
 func TestDuplicateKeyDomainMerge(t *testing.T) {
@@ -395,9 +488,11 @@ func TestDuplicateKeyDomainMerge(t *testing.T) {
 			files = append(files, loadFile("merge_domain_key1.yaml")...)
 			config.NewRateLimitConfigImpl(
 				files,
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), true)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), true,
+			)
 		},
-		"merge_domain_key1.yaml: duplicate descriptor composite key 'test-domain.key1_value1'")
+		"merge_domain_key1.yaml: duplicate descriptor composite key 'test-domain.key1_value1'",
+	)
 }
 
 func TestBadLimitUnit(t *testing.T) {
@@ -406,9 +501,11 @@ func TestBadLimitUnit(t *testing.T) {
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("bad_limit_unit.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"bad_limit_unit.yaml: invalid rate limit unit 'foo'")
+		"bad_limit_unit.yaml: invalid rate limit unit 'foo'",
+	)
 }
 
 func TestReplacesSelf(t *testing.T) {
@@ -417,9 +514,11 @@ func TestReplacesSelf(t *testing.T) {
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("replaces_self.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"replaces_self.yaml: replaces should not contain name of same descriptor")
+		"replaces_self.yaml: replaces should not contain name of same descriptor",
+	)
 }
 
 func TestReplacesEmpty(t *testing.T) {
@@ -428,9 +527,11 @@ func TestReplacesEmpty(t *testing.T) {
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("replaces_empty.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"replaces_empty.yaml: should not have an empty replaces entry")
+		"replaces_empty.yaml: should not have an empty replaces entry",
+	)
 }
 
 func TestBadYaml(t *testing.T) {
@@ -439,9 +540,11 @@ func TestBadYaml(t *testing.T) {
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("bad_yaml.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"bad_yaml.yaml: error loading config file: yaml: line 2: found unexpected end of stream")
+		"bad_yaml.yaml: error loading config file: yaml: line 2: found unexpected end of stream",
+	)
 }
 
 func TestMisspelledKey(t *testing.T) {
@@ -450,18 +553,22 @@ func TestMisspelledKey(t *testing.T) {
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("misspelled_key.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"misspelled_key.yaml: config error, unknown key 'ratelimit'")
+		"misspelled_key.yaml: config error, unknown key 'ratelimit'",
+	)
 
 	expectConfigPanic(
 		t,
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("misspelled_key2.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"misspelled_key2.yaml: config error, unknown key 'requestsperunit'")
+		"misspelled_key2.yaml: config error, unknown key 'requestsperunit'",
+	)
 }
 
 func TestNonStringKey(t *testing.T) {
@@ -470,9 +577,11 @@ func TestNonStringKey(t *testing.T) {
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("non_string_key.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"non_string_key.yaml: config error, key is not of type string: 0.25")
+		"non_string_key.yaml: config error, key is not of type string: 0.25",
+	)
 }
 
 func TestNonMapList(t *testing.T) {
@@ -481,9 +590,11 @@ func TestNonMapList(t *testing.T) {
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("non_map_list.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"non_map_list.yaml: config error, yaml file contains list of type other than map: a")
+		"non_map_list.yaml: config error, yaml file contains list of type other than map: a",
+	)
 }
 
 func TestUnlimitedWithRateLimitUnit(t *testing.T) {
@@ -492,23 +603,30 @@ func TestUnlimitedWithRateLimitUnit(t *testing.T) {
 		func() {
 			config.NewRateLimitConfigImpl(
 				loadFile("unlimited_with_unit.yaml"),
-				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false)
+				mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false)), false,
+			)
 		},
-		"unlimited_with_unit.yaml: should not specify rate limit unit when unlimited")
+		"unlimited_with_unit.yaml: should not specify rate limit unit when unlimited",
+	)
 }
 
 func TestShadowModeConfig(t *testing.T) {
 	assert := assert.New(t)
 	stats := stats.NewStore(stats.NewNullSink(), false)
 
-	rlConfig := config.NewRateLimitConfigImpl(loadFile("shadowmode_config.yaml"), mockstats.NewMockStatManager(stats), false)
+	rlConfig := config.NewRateLimitConfigImpl(
+		loadFile("shadowmode_config.yaml"), mockstats.NewMockStatManager(stats), false,
+	)
 	rlConfig.Dump()
 
 	rl := rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something"}},
-		})
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "something"},
+			},
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -524,8 +642,11 @@ func TestShadowModeConfig(t *testing.T) {
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "subvalue1"}},
-		})
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{Key: "key1", Value: "value1"}, {Key: "subkey1", Value: "subvalue1"},
+			},
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -534,16 +655,25 @@ func TestShadowModeConfig(t *testing.T) {
 	assert.Equal(rl.ShadowMode, true)
 	assert.EqualValues(10, rl.Limit.RequestsPerUnit)
 	assert.Equal(pb.RateLimitResponse_RateLimit_SECOND, rl.Limit.Unit)
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.total_hits").Value())
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.over_limit").Value())
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.near_limit").Value())
-	assert.EqualValues(1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.shadow_mode").Value())
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.total_hits").Value(),
+	)
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.over_limit").Value(),
+	)
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.near_limit").Value(),
+	)
+	assert.EqualValues(
+		1, stats.NewCounter("test-domain.key1_value1.subkey1_subvalue1.shadow_mode").Value(),
+	)
 
 	rl = rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key2", Value: "something"}},
-		})
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -560,7 +690,8 @@ func TestShadowModeConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "key2", Value: "value2"}},
-		})
+		},
+	)
 	rl.Stats.TotalHits.Inc()
 	rl.Stats.OverLimit.Inc()
 	rl.Stats.NearLimit.Inc()
@@ -576,7 +707,9 @@ func TestShadowModeConfig(t *testing.T) {
 func TestWildcardConfig(t *testing.T) {
 	assert := assert.New(t)
 	stats := stats.NewStore(stats.NewNullSink(), false)
-	rlConfig := config.NewRateLimitConfigImpl(loadFile("wildcard.yaml"), mockstats.NewMockStatManager(stats), false)
+	rlConfig := config.NewRateLimitConfigImpl(
+		loadFile("wildcard.yaml"), mockstats.NewMockStatManager(stats), false,
+	)
 	rlConfig.Dump()
 
 	// Baseline to show wildcard works like no value
@@ -584,12 +717,14 @@ func TestWildcardConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "noVal", Value: "foo1"}},
-		})
+		},
+	)
 	withoutVal2 := rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "noVal", Value: "foo2"}},
-		})
+		},
+	)
 	assert.NotNil(withoutVal1)
 	assert.Equal(withoutVal1, withoutVal2)
 
@@ -598,17 +733,22 @@ func TestWildcardConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "wild", Value: "foo1"}},
-		})
+		},
+	)
 	wildcard2 := rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "wild", Value: "foo2"}},
-		})
+		},
+	)
 	wildcard3 := rlConfig.GetLimit(
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
-			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "nestedWild", Value: "val1"}, {Key: "wild", Value: "goo2"}},
-		})
+			Entries: []*pb_struct.RateLimitDescriptor_Entry{
+				{Key: "nestedWild", Value: "val1"}, {Key: "wild", Value: "goo2"},
+			},
+		},
+	)
 	assert.NotNil(wildcard1)
 	assert.Equal(wildcard1, wildcard2)
 	assert.NotNil(wildcard3)
@@ -618,7 +758,8 @@ func TestWildcardConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "wild", Value: "bar"}},
-		})
+		},
+	)
 	assert.Nil(noMatch)
 
 	// Non-wildcard values don't eager match
@@ -626,7 +767,8 @@ func TestWildcardConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "noWild", Value: "foo1"}},
-		})
+		},
+	)
 	assert.Nil(eager)
 
 	// Wildcard in the middle of value is not supported.
@@ -634,7 +776,8 @@ func TestWildcardConfig(t *testing.T) {
 		context.TODO(), "test-domain",
 		&pb_struct.RateLimitDescriptor{
 			Entries: []*pb_struct.RateLimitDescriptor_Entry{{Key: "midWildcard", Value: "barab"}},
-		})
+		},
+	)
 	assert.Nil(midWildcard)
 }
 
@@ -939,16 +1082,20 @@ func TestDetailedMetric(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rlConfig := config.NewRateLimitConfigImpl(tt.config, mockstats.NewMockStatManager(stats), true)
-			rlConfig.Dump()
+		t.Run(
+			tt.name, func(t *testing.T) {
+				rlConfig := config.NewRateLimitConfigImpl(
+					tt.config, mockstats.NewMockStatManager(stats), true,
+				)
+				rlConfig.Dump()
 
-			rl := rlConfig.GetLimit(
-				context.TODO(), "nested",
-				tt.request,
-			)
-			assert.NotNil(rl)
-			assert.Equal(tt.expectedStatsKey, rl.Stats.Key)
-		})
+				rl := rlConfig.GetLimit(
+					context.TODO(), "nested",
+					tt.request,
+				)
+				assert.NotNil(rl)
+				assert.Equal(tt.expectedStatsKey, rl.Stats.Key)
+			},
+		)
 	}
 }

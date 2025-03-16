@@ -17,7 +17,8 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
-	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	//pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	pb "github.com/envoyproxy/ratelimit/api/ratelimit/server"
 )
 
 type TestStatSink struct {
@@ -49,7 +50,9 @@ func (s *TestStatSink) FlushTimer(name string, value float64) {
 	s.Unlock()
 }
 
-func NewRateLimitRequest(domain string, descriptors [][][2]string, hitsAddend uint32) *pb.RateLimitRequest {
+func NewRateLimitRequest(
+	domain string, descriptors [][][2]string, hitsAddend uint32,
+) *pb.RateLimitRequest {
 	request := &pb.RateLimitRequest{}
 	request.Domain = domain
 	for _, descriptor := range descriptors {
@@ -57,7 +60,8 @@ func NewRateLimitRequest(domain string, descriptors [][][2]string, hitsAddend ui
 		for _, entry := range descriptor {
 			newDescriptor.Entries = append(
 				newDescriptor.Entries,
-				&pb_struct.RateLimitDescriptor_Entry{Key: entry[0], Value: entry[1]})
+				&pb_struct.RateLimitDescriptor_Entry{Key: entry[0], Value: entry[1]},
+			)
 		}
 		request.Descriptors = append(request.Descriptors, newDescriptor)
 	}
@@ -65,8 +69,10 @@ func NewRateLimitRequest(domain string, descriptors [][][2]string, hitsAddend ui
 	return request
 }
 
-func NewRateLimitRequestWithPerDescriptorHitsAddend(domain string, descriptors [][][2]string,
-	hitsAddends []uint64) *pb.RateLimitRequest {
+func NewRateLimitRequestWithPerDescriptorHitsAddend(
+	domain string, descriptors [][][2]string,
+	hitsAddends []uint64,
+) *pb.RateLimitRequest {
 	request := NewRateLimitRequest(domain, descriptors, 1)
 	for i, hitsAddend := range hitsAddends {
 		request.Descriptors[i].HitsAddend = &wrapperspb.UInt64Value{Value: hitsAddend}
@@ -75,8 +81,13 @@ func NewRateLimitRequestWithPerDescriptorHitsAddend(domain string, descriptors [
 }
 
 func AssertProtoEqual(assert *assert.Assertions, expected proto.Message, actual proto.Message) {
-	assert.True(proto.Equal(expected, actual),
-		fmt.Sprintf("These two protobuf messages are not equal:\nexpected: %v\nactual:  %v", expected, actual))
+	assert.True(
+		proto.Equal(expected, actual),
+		fmt.Sprintf(
+			"These two protobuf messages are not equal:\nexpected: %v\nactual:  %v", expected,
+			actual,
+		),
+	)
 }
 
 type RedisConfig struct {
@@ -112,7 +123,9 @@ func WaitForTcpPort(ctx context.Context, port int, timeout time.Duration) error 
 }
 
 // startCacheProcess starts memcache or redis as a subprocess and waits until the TCP port is open.
-func startCacheProcess(ctx context.Context, command string, args []string, port int) (context.CancelFunc, error) {
+func startCacheProcess(
+	ctx context.Context, command string, args []string, port int,
+) (context.CancelFunc, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(ctx, command, args...)
 
@@ -143,7 +156,9 @@ func startCacheProcess(ctx context.Context, command string, args []string, port 
 	err = WaitForTcpPort(ctx, port, 1*time.Second)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("timed out waiting for %s to start up and accept connections: %v", command, err)
+		return nil, fmt.Errorf(
+			"timed out waiting for %s to start up and accept connections: %v", command, err,
+		)
 	}
 
 	return func() {
