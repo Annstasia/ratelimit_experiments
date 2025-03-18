@@ -335,7 +335,14 @@ func (this *service) ChangeLimit(
 	request *pb.RateLimitRequest,
 ) (finalResponse *pb.ChangeLimitResponse, finalError error) {
 	// Generate trace
-	fmt.Println("change limit is called")
+	fmt.Printf(
+		"change limit is called: domain %s entry %s limit unit %s limit value %s\n",
+		request.Domain, request.Descriptors[0], request.Descriptors[0].Limit.Unit,
+		request.Descriptors[0].Limit.RequestsPerUnit,
+	)
+	for _, descriptor := range request.Descriptors {
+		this.config.ChangeLimit(ctx, request.Domain, descriptor, descriptor.Limit)
+	}
 
 	return nil, nil
 }

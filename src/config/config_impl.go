@@ -170,7 +170,9 @@ func (this *rateLimitDescriptor) loadDescriptors(
 				panic(
 					newRateLimitConfigError(
 						config.Name,
-						fmt.Sprintf("invalid rate limit unit '%s'", descriptorConfig.RateLimit.Unit),
+						fmt.Sprintf(
+							"invalid rate limit unit '%s'", descriptorConfig.RateLimit.Unit,
+						),
 					),
 				)
 			}
@@ -410,6 +412,106 @@ func (this *rateLimitConfigImpl) GetLimit(
 	}
 
 	return rateLimit
+}
+
+func (this *rateLimitConfigImpl) ChangeLimit(
+	ctx context.Context, domain string, descriptor *pb_struct.RateLimitDescriptor,
+	limit *pb_struct.RateLimitDescriptor_RateLimitOverride,
+) bool {
+	logger.Debugf("starting get limit lookup")
+	var rateLimit *RateLimit = nil
+	domainInfo := this.domains[domain]
+	if domainInfo == nil {
+		logger.Debugf("unknown domain '%s'", domain)
+		domainStats := this.statsManager.NewDomainStats(domain)
+		domainStats.NotFound.Inc()
+		return false
+	}
+
+	//if descriptor.GetLimit() != nil {
+	//	rateLimitKey := descriptorKey(domain, descriptor)
+	//	rateLimitOverrideUnit := pb.RateLimitResponse_RateLimit_Unit(descriptor.GetLimit().GetUnit())
+	//	// When limit override is provided by envoy config, we don't want to enable shadow_mode
+	//	rateLimit = NewRateLimit(
+	//		descriptor.GetLimit().GetRequestsPerUnit(),
+	//		rateLimitOverrideUnit,
+	//		this.statsManager.NewStats(rateLimitKey),
+	//		false,
+	//		false,
+	//		"",
+	//		[]string{},
+	//		false,
+	//	)
+	//	return rateLimit
+	//}
+
+	descriptorsMap := domainInfo.descriptors
+	prevDescriptor := &domainInfo.rateLimitDescriptor
+
+	// Build detailed metric as we traverse the list of descriptors
+	var detailedMetricFullKey strings.Builder
+	detailedMetricFullKey.WriteString(domain)
+
+	for i, entry := range descriptor.Entries {
+		// First see if key_value is in the map. If that isn't in the map we look for just key
+		// to check for a default domainInfo.
+		finalKey := entry.Key + "_" + entry.Value
+
+		detailedMetricFullKey.WriteString(".")
+		detailedMetricFullKey.WriteString(finalKey)
+
+		logger.Debugf("looking up key: %s", finalKey)
+		nextDescriptor := descriptorsMap[finalKey]
+
+		// TODO: разобраться с wildcard
+		if nextDescriptor == nil && len(prevDescriptor.wildcardKeys) > 0 {
+			for _, wildcardKey := range prevDescriptor.wildcardKeys {
+				if strings.HasPrefix(finalKey, strings.TrimSuffix(wildcardKey, "*")) {
+					nextDescriptor = descriptorsMap[wildcardKey]
+					break
+				}
+			}
+		}
+
+		// TODO: скорее всего это можно убрать
+		if nextDescriptor == nil {
+			finalKey = entry.Key
+			logger.Debugf("looking up key: %s", finalKey)
+			nextDescriptor = descriptorsMap[finalKey]
+		}
+
+		if nextDescriptor != nil && nextDescriptor.limit != nil {
+			logger.Debugf("found rate limit: %s", finalKey)
+
+			if i == len(descriptor.Entries)-1 {
+				rateLimit = nextDescriptor.limit
+			}
+		}
+
+		if nextDescriptor != nil && len(nextDescriptor.descriptors) > 0 {
+			logger.Debugf("iterating to next level")
+			descriptorsMap = nextDescriptor.descriptors
+		}
+		prevDescriptor = nextDescriptor
+	}
+	// TODO: ВСТАВИТЬ ПРОВЕРКУ НА ВРЕМЯ СМЕНЫ ЛИМИТА
+	var newRateLimit *RateLimit = nil
+	if rateLimit != nil {
+		newRateLimit = NewRateLimit(
+			limit.RequestsPerUnit, pb.RateLimitResponse_RateLimit_Unit(limit.Unit), rateLimit.Stats,
+			rateLimit.Unlimited,
+			rateLimit.ShadowMode, rateLimit.Name, rateLimit.Replaces, rateLimit.DetailedMetric,
+		)
+	} else {
+		newRateLimit = NewRateLimit(
+			limit.RequestsPerUnit, pb.RateLimitResponse_RateLimit_Unit(limit.Unit),
+			stats.RateLimitStats{},
+			false,
+			false, "", nil, false,
+		)
+	}
+	prevDescriptor.limit = newRateLimit
+	return true
 }
 
 func (this *rateLimitConfigImpl) IsEmptyDomains() bool {

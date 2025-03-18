@@ -22,15 +22,22 @@ func loadConfigs(allConfigs []config.RateLimitConfigToLoad, mergeDomainConfigs b
 			os.Exit(1)
 		}
 	}()
-	statsManager := stats.NewStatManager(gostats.NewStore(gostats.NewNullSink(), false), settings.NewSettings())
+	statsManager := stats.NewStatManager(
+		gostats.NewStore(gostats.NewNullSink(), false), settings.NewSettings(),
+	)
 	config.NewRateLimitConfigImpl(allConfigs, statsManager, mergeDomainConfigs)
 }
 
 func main() {
 	configDirectory := flag.String(
-		"config_dir", "", "path to directory containing rate limit configs")
+		"config_dir",
+		"/home/stase/GolandProjects/diploma/ratelimit_experiments/src/config_check_cmd/config_examples",
+		"path to directory containing rate limit configs",
+	)
 	mergeDomainConfigs := flag.Bool(
-		"merge_domain_configs", false, "whether to merge configurations, referencing the same domain")
+		"merge_domain_configs", false,
+		"whether to merge configurations, referencing the same domain",
+	)
 	flag.Parse()
 	fmt.Printf("checking rate limit configs...\n")
 	fmt.Printf("loading config directory: %s\n", *configDirectory)
@@ -51,7 +58,9 @@ func main() {
 			os.Exit(1)
 		}
 		configYaml := config.ConfigFileContentToYaml(finalPath, string(bytes))
-		allConfigs = append(allConfigs, config.RateLimitConfigToLoad{Name: finalPath, ConfigYaml: configYaml})
+		allConfigs = append(
+			allConfigs, config.RateLimitConfigToLoad{Name: finalPath, ConfigYaml: configYaml},
+		)
 	}
 
 	loadConfigs(allConfigs, *mergeDomainConfigs)

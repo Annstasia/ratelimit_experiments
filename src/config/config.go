@@ -42,6 +42,11 @@ type RateLimitConfig interface {
 		ctx context.Context, domain string, descriptor *pb_struct.RateLimitDescriptor,
 	) *RateLimit
 
+	ChangeLimit(
+		ctx context.Context, domain string, descriptor *pb_struct.RateLimitDescriptor,
+		limit *pb_struct.RateLimitDescriptor_RateLimitOverride,
+	) bool
+
 	// Check if the domains is empty which corresponds to no config loaded.
 	IsEmptyDomains() bool
 }
