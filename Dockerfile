@@ -1,4 +1,4 @@
-FROM golang:1.24.0@sha256:2b1cbf278ce05a2a310a3d695ebb176420117a8cfcfcc4e5e68a1bef5f6354da AS build
+FROM golang:1.25.3@sha256:6ea52a02734dd15e943286b048278da1e04eca196a564578d718c7720433dbbe AS build
 WORKDIR /ratelimit
 
 ENV GOPROXY=https://proxy.golang.org
